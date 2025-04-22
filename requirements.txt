@@ -1,0 +1,12 @@
+streamlit
+pandas
+numpy
+plotly
+yfinance
+newsapi-python
+nltk
+transformers
+torch
+requests
+python-dotenv
+openai
