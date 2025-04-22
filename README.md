@@ -22,11 +22,11 @@ A Streamlit app that provides sentiment analysis for stocks using VADER and FinB
 - LLM: Azure OpenAI Service (GPT-4o deployment)
 
 ## Setup
-1. Copy `.env.example` to `.env` and fill in your API keys:
+1.  Fill in your API keys in the `.env` file:
    - `AZURE_OPENAI_API_KEY`: Your Azure OpenAI API key
    - `AZURE_OPENAI_ENDPOINT`: Your Azure OpenAI endpoint URL
    - `NEWS_API_KEY`: Your News API key
-2. Ensure you have a GPT-4o deployment named "sentimentscope-gpt-4o" in your Azure OpenAI resource
+2. Ensure you have a GPT-4o deployment named "stocksentiment-gpt-4o" in your Azure OpenAI resource
 3. Install dependencies: `pip install -r requirements.txt`
 4. Run the application: `streamlit run app.py`
 

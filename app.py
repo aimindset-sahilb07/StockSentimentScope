@@ -41,12 +41,21 @@ except (ImportError, Exception) as e:
     logger.warning(f"OpenAI client initialization failed: {str(e)}")
     OPENAI_AVAILABLE = False
 
-# Add custom CSS for sentiment styling
+# Add custom CSS for sentiment styling and animated dots
 st.markdown("""
 <style>
-.sentiment-positive { background-color: rgba(0, 255, 0, 0.2); padding: 10px; border-radius: 5px; margin: 5px 0; }
-.sentiment-neutral { background-color: rgba(255, 255, 0, 0.2); padding: 10px; border-radius: 5px; margin: 5px 0; }
-.sentiment-negative { background-color: rgba(255, 0, 0, 0.2); padding: 10px; border-radius: 5px; margin: 5px 0; }
+.sentiment-positive { background-color: rgba(0, 255, 0, 0.08); padding: 10px; border-radius: 5px; margin: 5px 0; }
+.sentiment-neutral { background-color: rgba(255, 193, 7, 0.08); padding: 10px; border-radius: 5px; margin: 5px 0; }
+.sentiment-negative { background-color: rgba(255, 0, 0, 0.08); padding: 10px; border-radius: 5px; margin: 5px 0; }
+.sentiment-dot {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  margin: 0 2px;
+  border-radius: 50%;
+  box-shadow: 0 1px 6px rgba(0,0,0,0.07);
+  opacity: 0.7;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -156,7 +165,7 @@ def plot_trend(df):
     return px.line(df2, x=df2.index, y='sentiment', title='Sentiment Trend')
 
 # Chat
-def chat_response(msg, stock, news, overall):
+def chat_response(msg, stock, news, overall, max_tokens=1024):
     if not OPENAI_AVAILABLE:
         return "Chat assistant is not available. Please check your Azure OpenAI configuration."
         
@@ -171,7 +180,7 @@ def chat_response(msg, stock, news, overall):
         response = client.chat.completions.create(
             model=AZURE_DEPLOYMENT_NAME,
             messages=messages,
-            max_tokens=150
+            max_tokens=max_tokens
         )
         
         return response.choices[0].message.content
@@ -225,34 +234,142 @@ if st.session_state.analysis_done:
                 dominant = max(sentiment_counts, key=sentiment_counts.get)
                 st.metric("Dominant Sentiment", f"{dominant.capitalize()}", f"{sentiment_counts[dominant]}/{len(fin_scores)}")
             
-            fig = plot_trend(df.set_index('time'))
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(plot_trend(df.set_index('time')), use_container_width=True)
             
-            st.subheader("News Articles Analysis")
-            for i, a in enumerate(articles[:10]):  # Limit to first 10 articles for display
-                if i < len(vad_scores) and i < len(fin_scores):
-                    col = 'sentiment-positive' if vad_scores[i] > 0.05 else 'sentiment-negative' if vad_scores[i] < -0.05 else 'sentiment-neutral'
-                    st.markdown(f"<div class='{col}'><a href='{a['url']}' target='_blank'>{a['title']}</a> ({fin_scores[i]['label']} {fin_scores[i]['score']:.2f})</div>", unsafe_allow_html=True)
-            
-            # Chat
-            if OPENAI_AVAILABLE:
+            # --- Split-screen layout for Articles and Chat ---
+            st.subheader("Analysis & Insights")
+            # Give chat more space to prevent overflow
+            col_articles, col_chat = st.columns([3, 2], gap="large")
+
+            with col_articles:
+                st.subheader("News Articles Analysis")
+                # --- Article Display Controls ---
+                sentiment_options = ["Positive", "Negative", "Neutral"]
+                sentiment_map = {"Positive": "positive", "Negative": "negative", "Neutral": "neutral"}
+                sort_options = ["Newest First", "Oldest First", "Strongest Sentiment"]
+                # Place dropdowns in a single row
+                col_sentiment, col_sort = st.columns([1, 1])
+                with col_sentiment:
+                    selected_sentiment = st.selectbox("Show Articles With Sentiment", sentiment_options, index=0, key="sentiment_filter")
+                with col_sort:
+                    sort_by = st.selectbox("Sort Articles By", sort_options, key="sort_by")
+
+                # --- Annotate articles with sentiment and date before filtering ---
+                for i, a in enumerate(articles):
+                    a['sentiment_label'] = fin_scores[i]['label'] if i < len(fin_scores) else 'neutral'
+                    a['sentiment_score'] = fin_scores[i]['score'] if i < len(fin_scores) else 0.0
+                    date_str = a.get('publishedAt', '')
+                    try:
+                        a['parsed_date'] = pd.to_datetime(date_str)
+                    except Exception:
+                        a['parsed_date'] = pd.NaT
+
+                # Filter articles by selected sentiment
+                filtered_articles = [a for a in articles if a.get('sentiment_label') == sentiment_map[selected_sentiment]]
+
+                def sort_articles(arts):
+                    if sort_by == "Newest First":
+                        return sorted(arts, key=lambda x: x['parsed_date'] if not pd.isna(x['parsed_date']) else pd.Timestamp.min, reverse=True)
+                    elif sort_by == "Oldest First":
+                        return sorted(arts, key=lambda x: x['parsed_date'] if not pd.isna(x['parsed_date']) else pd.Timestamp.max)
+                    else:  # Strongest Sentiment
+                        return sorted(arts, key=lambda x: abs(x['sentiment_score']), reverse=True)
+
+                # --- Pagination/Load More ---
+                if 'articles_shown' not in st.session_state:
+                    st.session_state.articles_shown = 5
+
+                articles_displayed = 0
+                max_to_show = st.session_state.articles_shown
+                stop_display = False
+
+                def sentiment_icon(label):
+                    if label == 'positive': return '🟢'
+                    if label == 'negative': return '🔴'
+                    return '🟡'
+
+                sorted_arts = sort_articles(filtered_articles)
+                st.markdown(f"#### {selected_sentiment} Articles ({len(sorted_arts)})")
+                for i, a in enumerate(sorted_arts):
+                    if articles_displayed >= max_to_show:
+                        stop_display = True
+                    with st.container():
+                        title_link = f"[{a['title']}]({a['url']})"
+                        st.markdown(f"**{title_link}** {sentiment_icon(a['sentiment_label'])}", unsafe_allow_html=True)
+                        meta = f"{a.get('source', {}).get('name', 'Unknown Source')} | "
+                        meta += a['parsed_date'].strftime('%b %d, %Y') if not pd.isna(a['parsed_date']) else 'Unknown date'
+                        st.caption(meta)
+                        if a.get('description'):
+                            st.markdown(a['description'])
+                        with st.expander("Show full article"):
+                            st.write(a.get('content', 'No content available.'))
+                        summarize_key = f"summarize_{articles_displayed}"
+                        if st.button("Summarize", key=summarize_key):
+                            if 'history' not in st.session_state:
+                                st.session_state.history = []
+                            user_prompt = f"Summarize the article: '{a['title']}'"
+                            st.session_state.history.append(("user", user_prompt))
+                            with st.spinner("Generating summary..."):
+                                article_content = a.get('description') or a.get('content') or a.get('title')
+                                if article_content:
+                                    summary_prompt = f"Summarize the following article for a finance-interested audience.\n\nTitle: {a['title']}\nContent: {article_content}\n\nPlease provide your response in the following format:\nKey Takeaways:\n- ...\n- ...\nConclusion:\n..."
+                                    resp = chat_response(summary_prompt, stock, articles, avg_sentiment)
+                                    st.session_state.history.append(("assistant", resp))
+                                else:
+                                    st.session_state.history.append(("assistant", "Sorry, this article does not have enough content to summarize."))
+                            st.rerun()
+                    articles_displayed += 1
+
+                # --- Load More Button ---
+                if articles_displayed < len(sorted_arts):
+                    if st.button("Load more articles"):
+                        st.session_state.articles_shown += 5
+                        st.rerun()
+                else:
+                    st.session_state.articles_shown = 5
+
+                # --- Sentiment Legend ---
+                st.markdown("""
+                <div style='margin-top: 12px; margin-bottom: 8px; font-size: 0.95em;'>
+                <b>Sentiment Legend:</b> 🟢 Positive &nbsp;&nbsp; 🟡 Neutral &nbsp;&nbsp; 🔴 Negative
+                </div>
+                """, unsafe_allow_html=True)
+
+            # --- Chat Interface in right column ---
+            with col_chat:
                 st.subheader("Chat Assistant")
-                if 'history' not in st.session_state:
-                    st.session_state.history = []
-                
-                with st.form("chat_form", clear_on_submit=False):
-                    user_msg = st.text_input("Ask about this analysis:", key="chat_input")
-                    send = st.form_submit_button("Send")
-                    if send and user_msg:
+                # Add custom CSS to ensure chat wraps and fits in column
+                st.markdown("""
+                <style>
+                .element-container .stChatMessageContent, .element-container .stMarkdown {
+                    overflow-wrap: break-word !important;
+                    word-break: break-word !important;
+                    max-width: 100% !important;
+                }
+                .stChatInputContainer { max-width: 100% !important; }
+                </style>
+                """, unsafe_allow_html=True)
+                if OPENAI_AVAILABLE:
+                    if 'history' not in st.session_state:
+                        st.session_state.history = []
+
+                    # Display messages
+                    for role, msg in st.session_state.history:
+                        if role == "user":
+                            st.chat_message("user").write(msg)
+                        else:
+                            st.chat_message("assistant").write(msg)
+
+                    # Input at bottom
+                    prompt = st.chat_input("Ask about this analysis")
+                    if prompt:
                         with st.spinner("Generating response..."):
-                            resp = chat_response(user_msg, stock, articles, avg_sentiment)
-                            st.session_state.history.append((user_msg, resp))
-                
-                for u, r in st.session_state.history:
-                    st.markdown(f"**You:** {u}")
-                    st.markdown(f"**Bot:** {r}")
-            else:
-                st.warning("Chat assistant is not available. Please check your Azure OpenAI configuration.")
+                            resp = chat_response(prompt, stock, articles, avg_sentiment)
+                        st.session_state.history.append(("user", prompt))
+                        st.session_state.history.append(("assistant", resp))
+                        st.rerun()
+                else:
+                    st.warning("Chat assistant is not available. Please check your Azure OpenAI configuration.")
         else:
             st.warning("No text content found in news articles to analyze.")
 else:
