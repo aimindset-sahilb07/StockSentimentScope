@@ -1,7 +1,8 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import plotly.express as px
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 import yfinance as yf
 from datetime import datetime, timedelta, timezone
 from newsapi import NewsApiClient
@@ -161,8 +162,74 @@ def fetch_news(ticker, tf):
 
 # Chart
 def plot_trend(df):
-    df2 = df.copy(); df2['sentiment'] = df2['text_score']
-    return px.line(df2, x=df2.index, y='sentiment', title='Sentiment Trend')
+    df2 = df.copy()
+    df2['sentiment'] = df2['text_score']
+    df2['rolling_avg'] = df2['sentiment'].rolling(3, min_periods=1).mean()
+    fig = make_subplots(specs=[[{"secondary_y": True}]])
+    # raw sentiment
+    fig.add_trace(
+        go.Scatter(
+            x=df2.index, y=df2['sentiment'],
+            mode='markers',
+            marker=dict(color=df2['sentiment'].apply(lambda v: 'green' if v>=0 else 'red')),
+            name='Raw Sentiment',
+            hovertemplate='Date: %{x}<br>Sentiment: %{y:.2f}<extra></extra>'
+        ),
+        secondary_y=False
+    )
+    # rolling average
+    fig.add_trace(
+        go.Scatter(
+            x=df2.index, y=df2['rolling_avg'],
+            mode='lines',
+            line=dict(color='blue', width=2),
+            name='Rolling Avg',
+            hovertemplate='Date: %{x}<br>Rolling Avg: %{y:.2f}<extra></extra>'
+        ),
+        secondary_y=False
+    )
+    # price on secondary axis
+    if 'price' in df2.columns:
+        fig.add_trace(
+            go.Scatter(
+                x=df2.index, y=df2['price'],
+                mode='lines',
+                line=dict(color='orange'),
+                name='Price'
+            ),
+            secondary_y=True
+        )
+    # layout
+    fig.update_layout(
+        title='Sentiment Trend',
+        xaxis_title='Date',
+        yaxis_title='Sentiment Score',
+        legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),
+        xaxis_rangeslider_visible=True
+    )
+    fig.update_yaxes(title_text='Price', secondary_y=True)
+    return fig
+
+def build_trend_dataframe(stock_data, vad_scores):
+    """
+    Build time-series DataFrame for sentiment trend chart
+    """
+    score_len = min(len(vad_scores), len(stock_data))
+    # Handle both Series and DataFrame cases for Close prices
+    close_data = stock_data['Close']
+    if isinstance(close_data, pd.DataFrame):
+        # If 'Close' is a DataFrame (happens with some Yahoo API responses)
+        price_values = close_data.iloc[:score_len].values.flatten().tolist()
+    else:
+        # If 'Close' is a Series (standard case)
+        price_values = close_data.iloc[:score_len].tolist()
+        
+    # Create DataFrame with guaranteed 1D columns
+    return pd.DataFrame({
+        'time': list(stock_data.index[:score_len]),
+        'text_score': vad_scores[:score_len],
+        'price': price_values
+    })
 
 # Chat
 def chat_response(msg, stock, news, overall, max_tokens=1024):
@@ -189,9 +256,15 @@ def chat_response(msg, stock, news, overall, max_tokens=1024):
         return "Sorry, I'm having trouble analyzing this right now. Please try again later."
 
 # UI
-st.title("StockSentimentScope")
+st.title("📈 StockSentimentScope")
+st.subheader("Real-time AI‑powered sentiment analysis from latest news articles")
 ticker = st.sidebar.text_input("Ticker", value="AAPL", key="ticker_input")
-time_frame = st.sidebar.selectbox("Time Frame", ['Last 24 Hours','Last 3 Days','Last Week','Last Month'], key="time_frame")
+time_frame = st.sidebar.selectbox(
+    "Time Frame",
+    ['Last 24 Hours','Last 3 Days','Last Week','Last Month'],
+    index=1,
+    key="time_frame"
+)
 
 if st.sidebar.button("Analyze Sentiment", key="analyze_btn"):
     st.session_state.analysis_done = True
@@ -216,9 +289,8 @@ if st.session_state.analysis_done:
             # Use the simple sentiment analysis function
             vad_scores, fin_scores = simple_sentiment_analysis(texts)
             
-            # Ensure we don't exceed the length of available data
-            score_len = min(len(vad_scores), len(stock['data']))
-            df = pd.DataFrame({'time':stock['data'].index[:score_len], 'text_score':vad_scores[:score_len]})
+            # Build trend DataFrame via helper to ensure 1D lists
+            df = build_trend_dataframe(stock['data'], vad_scores)
             
             col1, col2, col3 = st.columns(3)
             with col1:

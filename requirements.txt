@@ -10,3 +10,4 @@ torch
 requests
 python-dotenv
 openai
+pytest
