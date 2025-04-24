@@ -57,6 +57,38 @@ st.markdown("""
   box-shadow: 0 1px 6px rgba(0,0,0,0.07);
   opacity: 0.7;
 }
+
+/* Section background styles */
+.graph-section {
+  background-color: rgba(235, 245, 255, 0.6);
+  border-radius: 8px;
+  padding: 15px;
+  margin-bottom: 20px;
+  border: 1px solid rgba(220, 230, 242, 0.8);
+}
+
+.news-section {
+  background-color: rgba(245, 242, 255, 0.6);
+  border-radius: 8px;
+  padding: 15px;
+  margin-bottom: 20px;
+  border: 1px solid rgba(230, 230, 250, 0.8);
+}
+
+.chat-section {
+  background-color: rgba(240, 252, 240, 0.6);
+  border-radius: 8px;
+  padding: 15px;
+  margin-bottom: 20px;
+  border: 1px solid rgba(220, 242, 220, 0.8);
+}
+
+div[data-testid="stMetric"] {
+  background-color: rgba(255, 255, 255, 0.7);
+  border-radius: 5px;
+  padding: 10px 5px;
+  box-shadow: 0 1px 6px rgba(0,0,0,0.05);
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -165,49 +197,107 @@ def plot_trend(df):
     df2 = df.copy()
     df2['sentiment'] = df2['text_score']
     df2['rolling_avg'] = df2['sentiment'].rolling(3, min_periods=1).mean()
+    
+    # Make a subplot with secondary y-axis
     fig = make_subplots(specs=[[{"secondary_y": True}]])
-    # raw sentiment
-    fig.add_trace(
-        go.Scatter(
-            x=df2.index, y=df2['sentiment'],
-            mode='markers',
-            marker=dict(color=df2['sentiment'].apply(lambda v: 'green' if v>=0 else 'red')),
-            name='Raw Sentiment',
-            hovertemplate='Date: %{x}<br>Sentiment: %{y:.2f}<extra></extra>'
-        ),
-        secondary_y=False
-    )
-    # rolling average
-    fig.add_trace(
-        go.Scatter(
-            x=df2.index, y=df2['rolling_avg'],
-            mode='lines',
-            line=dict(color='blue', width=2),
-            name='Rolling Avg',
-            hovertemplate='Date: %{x}<br>Rolling Avg: %{y:.2f}<extra></extra>'
-        ),
-        secondary_y=False
-    )
-    # price on secondary axis
+    
+    # price on primary axis
     if 'price' in df2.columns:
         fig.add_trace(
             go.Scatter(
                 x=df2.index, y=df2['price'],
                 mode='lines',
-                line=dict(color='orange'),
+                line=dict(color='rgba(255, 165, 0, 0.8)', width=2),  # More transparent orange
                 name='Price'
             ),
-            secondary_y=True
+            secondary_y=False
         )
+    
+    # raw sentiment on secondary axis
+    fig.add_trace(
+        go.Scatter(
+            x=df2.index, y=df2['sentiment'],
+            mode='markers',
+            marker=dict(
+                color=df2['sentiment'].apply(lambda v: 'green' if v>=0 else 'red'),
+                size=8,
+                opacity=0.7
+            ),
+            name='Raw Sentiment',
+            hovertemplate='Date: %{x}<br>Sentiment: %{y:.2f}<extra></extra>'
+        ),
+        secondary_y=True
+    )
+    
+    # rolling average with gradient line - using simpler colorscale approach
+    # Create a list of colors based on sentiment values
+    colors = ['red' if val < -0.05 else 'yellow' if val < 0.05 else 'green' for val in df2['rolling_avg']]
+    
+    fig.add_trace(
+        go.Scatter(
+            x=df2.index, y=df2['rolling_avg'],
+            mode='lines',
+            line=dict(
+                width=2,
+                color='rgba(65, 105, 225, 0.6)', # Lighter royal blue with transparency
+                dash='dot',  # Make the line dotted
+            ),
+            marker=dict(
+                color=df2['rolling_avg'],
+                colorscale=[
+                    [0, 'red'],
+                    [0.5, 'yellow'],
+                    [1.0, 'green']
+                ],
+                colorbar=dict(title="Sentiment")
+            ),
+            name='Rolling Avg',
+            hovertemplate='Date: %{x}<br>Rolling Avg: %{y:.2f}<extra></extra>'
+        ),
+        secondary_y=True
+    )
+    
     # layout
     fig.update_layout(
         title='Sentiment Trend',
         xaxis_title='Date',
-        yaxis_title='Sentiment Score',
-        legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),
-        xaxis_rangeslider_visible=True
+        yaxis_title='Price ($)',
+        legend=dict(
+            orientation='h', 
+            yanchor='bottom', 
+            y=1.02, 
+            xanchor='right', 
+            x=1,
+            # Add clickmode to show that legends are toggles
+            itemclick="toggle",
+            itemdoubleclick="toggleothers",
+            # Add visual indicators to show legend items are clickable
+            itemsizing="constant"
+        ),
+        xaxis_rangeslider_visible=False,  # Removed as requested
+        plot_bgcolor='rgba(240,240,240,0.2)',  # Lighter background
+        xaxis=dict(
+            showgrid=False,  # Remove x grid
+            zeroline=True,   # Keep zero line
+            zerolinecolor='rgba(0,0,0,0.2)'  # Subtle zero line
+        ),
+        yaxis=dict(
+            showgrid=True,
+            gridcolor='rgba(0,0,0,0.05)',  # Very subtle grid
+            zeroline=True,
+            zerolinecolor='rgba(0,0,0,0.2)'
+        )
     )
-    fig.update_yaxes(title_text='Price', secondary_y=True)
+    
+    fig.update_yaxes(title_text='Sentiment Score', secondary_y=True)
+    fig.update_yaxes(title_text='Price ($)', secondary_y=False)
+    
+    # Remove horizontal grid lines for secondary y-axis (sentiment)
+    fig.update_yaxes(showgrid=False, secondary_y=True)
+    
+    # Set Rolling Avg trace to be invisible by default
+    fig.data[2].visible = 'legendonly'
+    
     return fig
 
 def build_trend_dataframe(stock_data, vad_scores):
@@ -306,7 +396,10 @@ if st.session_state.analysis_done:
                 dominant = max(sentiment_counts, key=sentiment_counts.get)
                 st.metric("Dominant Sentiment", f"{dominant.capitalize()}", f"{sentiment_counts[dominant]}/{len(fin_scores)}")
             
+            # Wrap the chart in a styled div
+            st.markdown('<div class="graph-section">', unsafe_allow_html=True)
             st.plotly_chart(plot_trend(df.set_index('time')), use_container_width=True)
+            st.markdown('</div>', unsafe_allow_html=True)
             
             # --- Split-screen layout for Articles and Chat ---
             st.subheader("Analysis & Insights")
@@ -314,6 +407,8 @@ if st.session_state.analysis_done:
             col_articles, col_chat = st.columns([3, 2], gap="large")
 
             with col_articles:
+                # Wrap news section in styled div
+                st.markdown('<div class="news-section">', unsafe_allow_html=True)
                 st.subheader("News Articles Analysis")
                 # --- Article Display Controls ---
                 sentiment_options = ["Positive", "Negative", "Neutral"]
@@ -407,9 +502,12 @@ if st.session_state.analysis_done:
                 </div>
                 """, unsafe_allow_html=True)
 
-            # --- Chat Interface in right column ---
+                st.markdown('</div>', unsafe_allow_html=True)
+            
             with col_chat:
-                st.subheader("Chat Assistant")
+                # Wrap chat section in styled div
+                st.markdown('<div class="chat-section">', unsafe_allow_html=True)
+                st.subheader("AI Assistant")
                 # Add custom CSS to ensure chat wraps and fits in column
                 st.markdown("""
                 <style>
@@ -442,6 +540,7 @@ if st.session_state.analysis_done:
                         st.rerun()
                 else:
                     st.warning("Chat assistant is not available. Please check your Azure OpenAI configuration.")
+                st.markdown('</div>', unsafe_allow_html=True)
         else:
             st.warning("No text content found in news articles to analyze.")
 else:

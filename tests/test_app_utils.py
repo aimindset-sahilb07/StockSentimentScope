@@ -107,8 +107,36 @@ def test_plot_trend_content():
     df = pd.DataFrame({'text_score': [0.1, -0.2], 'price': [10, 20]}, index=idx)
     fig = app.plot_trend(df)
     assert isinstance(fig, go.Figure)
-    # Expect 3 traces: raw sentiment, rolling avg, price
+    # Expect 3 traces: price, raw sentiment, rolling avg
     assert len(fig.data) == 3
+    
+    # Check order and placement of traces
+    assert fig.data[0].name == 'Price'
+    assert fig.data[1].name == 'Raw Sentiment'
+    assert fig.data[2].name == 'Rolling Avg'
+    
+    # Check secondary axis assignments
+    assert fig.data[0].yaxis == 'y'  # Price on primary axis
+    assert fig.data[1].yaxis == 'y2'  # Raw sentiment on secondary axis
+    assert fig.data[2].yaxis == 'y2'  # Rolling avg on secondary axis
+    
+    # Verify gradient coloring on rolling avg trace
+    rolling_avg_trace = fig.data[2]
+    assert 'colorscale' in rolling_avg_trace.marker
+    
+    # Verify Rolling Avg is invisible by default
+    assert rolling_avg_trace.visible == 'legendonly'
+    
+    # Verify range slider is disabled
+    assert fig.layout.xaxis.rangeslider.visible is False
+    
+    # Check axis titles
+    assert fig.layout.yaxis.title.text == 'Price ($)'
+    assert fig.layout.yaxis2.title.text == 'Sentiment Score'
+    
+    # Verify legend configuration
+    assert fig.layout.legend.itemclick == 'toggle'
+    assert fig.layout.legend.itemsizing == 'constant'
 
 
 def test_chat_response_fallback(monkeypatch):
