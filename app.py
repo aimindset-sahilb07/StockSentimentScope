@@ -547,6 +547,14 @@ else:
     st.info("Enter a ticker and click 'Analyze Sentiment'")
 
 st.markdown("""
+<style>
+  .stApp {
+    margin-bottom: 70px;
+  }
+</style>
+""", unsafe_allow_html=True)
+
+st.markdown("""
 <script>
 document.addEventListener('keydown', function(e) {
   if (e.key === 'Enter' && !e.shiftKey) {
@@ -563,3 +571,23 @@ document.addEventListener('keydown', function(e) {
 });
 </script>
 """, unsafe_allow_html=True)
+
+st.markdown("---")
+
+footer_container = st.container()
+
+with footer_container:
+    st.markdown(
+        """
+        <div style="background: linear-gradient(90deg, #f8f9fa 0%, #e9ecef 100%); 
+                    padding: 10px 0 8px 0; 
+                    text-align: center;
+                    margin-top: 20px;
+                    box-shadow: 0 -1px 6px rgba(0,0,0,0.1);">
+            <p style="font-style: italic; margin: 0;">
+                <em>Disclaimer: I'm just a dashboard, not your financial advisor. This information is provided for informational purposes only and should not be considered investment advice. — always do your own research!</em>
+            </p>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
