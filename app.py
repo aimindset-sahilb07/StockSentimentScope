@@ -551,6 +551,17 @@ st.markdown("""
   .stApp {
     margin-bottom: 70px;
   }
+  
+  /* Make sidebar narrower */
+  [data-testid="stSidebar"] {
+    width: 14rem !important;
+  }
+  
+  /* Adjust sidebar input controls width */
+  [data-testid="stSidebar"] section[data-testid="stVerticalBlock"] {
+    width: 14rem;
+    padding-right: 1rem;
+  }
 </style>
 """, unsafe_allow_html=True)
 
