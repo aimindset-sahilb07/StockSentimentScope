@@ -42,56 +42,6 @@ except (ImportError, Exception) as e:
     logger.warning(f"OpenAI client initialization failed: {str(e)}")
     OPENAI_AVAILABLE = False
 
-# Add custom CSS for sentiment styling and animated dots
-st.markdown("""
-<style>
-.sentiment-positive { background-color: rgba(0, 255, 0, 0.08); padding: 10px; border-radius: 5px; margin: 5px 0; }
-.sentiment-neutral { background-color: rgba(255, 193, 7, 0.08); padding: 10px; border-radius: 5px; margin: 5px 0; }
-.sentiment-negative { background-color: rgba(255, 0, 0, 0.08); padding: 10px; border-radius: 5px; margin: 5px 0; }
-.sentiment-dot {
-  display: inline-block;
-  width: 14px;
-  height: 14px;
-  margin: 0 2px;
-  border-radius: 50%;
-  box-shadow: 0 1px 6px rgba(0,0,0,0.07);
-  opacity: 0.7;
-}
-
-/* Section background styles */
-.graph-section {
-  background-color: rgba(235, 245, 255, 0.6);
-  border-radius: 8px;
-  padding: 15px;
-  margin-bottom: 20px;
-  border: 1px solid rgba(220, 230, 242, 0.8);
-}
-
-.news-section {
-  background-color: rgba(245, 242, 255, 0.6);
-  border-radius: 8px;
-  padding: 15px;
-  margin-bottom: 20px;
-  border: 1px solid rgba(230, 230, 250, 0.8);
-}
-
-.chat-section {
-  background-color: rgba(240, 252, 240, 0.6);
-  border-radius: 8px;
-  padding: 15px;
-  margin-bottom: 20px;
-  border: 1px solid rgba(220, 242, 220, 0.8);
-}
-
-div[data-testid="stMetric"] {
-  background-color: rgba(255, 255, 255, 0.7);
-  border-radius: 5px;
-  padding: 10px 5px;
-  box-shadow: 0 1px 6px rgba(0,0,0,0.05);
-}
-</style>
-""", unsafe_allow_html=True)
-
 # NewsAPI client
 try:
     newsapi = NewsApiClient(api_key=os.getenv("NEWS_API_KEY"))
@@ -349,14 +299,32 @@ def chat_response(msg, stock, news, overall, max_tokens=1024):
 st.title("📈 StockSentimentScope")
 st.subheader("Real-time AI‑powered sentiment analysis from latest news articles")
 ticker = st.sidebar.text_input("Ticker", value="AAPL", key="ticker_input")
-time_frame = st.sidebar.selectbox(
+
+# Native Streamlit radio toggle for time frame
+toggle_labels = ["24hr", "3D", "7D", "30D"]
+toggle_map = {
+    "24hr": "Last 24 Hours",
+    "3D": "Last 3 Days",
+    "7D": "Last Week",
+    "30D": "Last Month"
+}
+selected_toggle = st.sidebar.radio(
     "Time Frame",
-    ['Last 24 Hours','Last 3 Days','Last Week','Last Month'],
+    toggle_labels,
     index=1,
-    key="time_frame"
+    key="time_frame_toggle",
+    horizontal=True
 )
+time_frame = toggle_map[selected_toggle]
 
 if st.sidebar.button("Analyze Sentiment", key="analyze_btn"):
+    # Check if we're analyzing a new ticker and clear chat history if so
+    if 'last_analyzed_ticker' in st.session_state and st.session_state.last_analyzed_ticker != ticker:
+        if 'history' in st.session_state:
+            st.session_state.history = []
+    
+    # Store current ticker for future comparison
+    st.session_state.last_analyzed_ticker = ticker
     st.session_state.analysis_done = True
 
 if st.session_state.analysis_done:
@@ -462,16 +430,15 @@ if st.session_state.analysis_done:
                         stop_display = True
                     with st.container():
                         title_link = f"[{a['title']}]({a['url']})"
-                        st.markdown(f"**{title_link}** {sentiment_icon(a['sentiment_label'])}", unsafe_allow_html=True)
+                        st.markdown(f"**{title_link}**", unsafe_allow_html=True)
                         meta = f"{a.get('source', {}).get('name', 'Unknown Source')} | "
                         meta += a['parsed_date'].strftime('%b %d, %Y') if not pd.isna(a['parsed_date']) else 'Unknown date'
                         st.caption(meta)
                         if a.get('description'):
                             st.markdown(a['description'])
-                        with st.expander("Show full article"):
-                            st.write(a.get('content', 'No content available.'))
+                        
                         summarize_key = f"summarize_{articles_displayed}"
-                        if st.button("Summarize", key=summarize_key):
+                        if st.button("Deep Dive ->", key=summarize_key):
                             if 'history' not in st.session_state:
                                 st.session_state.history = []
                             user_prompt = f"Summarize the article: '{a['title']}'"
